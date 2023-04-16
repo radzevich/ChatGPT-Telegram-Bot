@@ -2,12 +2,11 @@ import logging
 import traceback
 import os
 
-from open_ai_client import OpenAiClient, OpenAiViolatedException
-from response_builder import ResponseBuilder
+from open_ai_client import OpenAiClient
 from telegram import Update
 from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler
 from telegram.constants import ParseMode
-from time import time
+from models.chat import Chat
 
 
 class TelegramBot:
@@ -23,35 +22,8 @@ class TelegramBot:
         self.application.run_polling()
 
     async def _ask_command_async(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        message = await context.bot.send_message(chat_id=update.effective_chat.id,
-                                                 text="Loading...")
-
-        last_message_time = time()
-        response_builder = ResponseBuilder()
-
-        try:
-            openai_response = self.openai.chat_completion_stream(prompt=update.message.text)
-
-            for (token, is_last) in openai_response:
-                response_builder.append_token(token)
-
-                now = time()
-                if not is_last and now - last_message_time < 1:
-                    continue
-
-                # edit message in Telegram
-                last_message_time = now
-                try:
-                    message = await context.bot.edit_message_text(text=response_builder.to_string(),
-                                                                  chat_id=message.chat_id,
-                                                                  message_id=message.message_id,
-                                                                  parse_mode=ParseMode.MARKDOWN_V2)
-                except Exception as ex:
-                    self.logger.error('message: %s\ntrace: %s', str(ex), traceback.format_exc())
-        except OpenAiViolatedException as ex:
-            await context.bot.edit_message_text(text=str(ex),
-                                                chat_id=message.chat_id,
-                                                message_id=message.message_id)
+        chat = Chat(update.effective_chat.id, context.bot, self.openai)
+        await chat.send_message_async(update.message.text)
 
     async def error_handler_context(self, update, context):
         await context.bot.send_message(chat_id=update.effective_chat.id,

@@ -1,3 +1,4 @@
+from context_manager import ContextManager
 from open_ai_client import OpenAiClient
 from telegram_bot import TelegramBot
 import logging
@@ -11,9 +12,8 @@ logging.basicConfig(
 
 
 if __name__ == '__main__':
-    # set up OpenAI client
-    openai = OpenAiClient()
-
     # set up Telegram client
-    bot = TelegramBot(openai)
+    context_manager = ContextManager()
+    openai_client = OpenAiClient(context_manager)
+    bot = TelegramBot(openai_client)
     bot.run()

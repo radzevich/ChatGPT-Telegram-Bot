@@ -1,45 +1,59 @@
 import os
 import openai
+from context_manager import ContextManager
+
+
+model = "gpt-3.5-turbo-0301"
 
 
 class OpenAiClient:
-    def __init__(self):
+    def __init__(self, context_manager: ContextManager):
+        self.context_manager = context_manager
         openai.api_key = os.getenv("OPENAI_API_KEY")
 
-    def chat_completion_stream(self, prompt):
-        completion = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {
-                    "role": "user",
-                    "content": prompt
-                }
-            ],
-            stream=True
-        )
+    @staticmethod
+    def run_moderation(content):
+        moderation = openai.Moderation.create(input=content)
+        all_categories = moderation.results[0].categories
 
+        for category in moderation.results[0].categories:
+            if all_categories[category]:
+                return True
+
+        return False
+
+    def chat_completion_stream(self, chat_id, content):
+        # prepare context
+        messages = self.context_manager.get_messages(chat_id)
+        messages.append({
+            "role": "user",
+            "content": content,
+        })
+
+        # make request
+        completion = openai.ChatCompletion.create(
+            model=model,
+            messages=messages,
+            stream=True)
+
+        # process response chunks
+        tokens = []
         for chunk in completion:
             choice = chunk['choices'][0]
 
             delta = choice['delta']
             if 'content' in delta:
-                yield delta['content']
+                token = delta['content']
+                tokens.append(token)
+                yield token
 
             if choice['finish_reason'] is not None:
                 break
 
-    def run_moderation(self, prompt):
-        moderation = openai.Moderation.create(
-            input=prompt,
-        )
+        # store updated context
+        messages.append({
+            "role": "assistant",
+            "content": ''.join(tokens),
+        })
 
-        violated_categories = False
-        all_categories = moderation.results[0].categories
-
-        for category in moderation.results[0].categories:
-            violated_categories |= all_categories[category]
-
-        print(moderation.results[0].categories)
-
-        return violated_categories
-
+        self.context_manager.set_messages(chat_id, messages)

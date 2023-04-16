@@ -2,21 +2,15 @@ import logging
 import traceback
 from open_ai_client import OpenAiClient
 from telegram.constants import ParseMode
-from enum import Enum
 from time import time
 from response_formatter import to_markdown2_string
 
 
 class Chat:
-    class UserType(Enum):
-        USER = 1
-        CHAT_GPT = 2
-
     def __init__(self, chat_id, bot, openai: OpenAiClient):
         self.chat_id = chat_id
         self.bot = bot
         self.openai = openai
-        self.messages = []
         self.logger = logging.getLogger('Chat')
 
     async def send_message_async(self, text):
@@ -33,10 +27,8 @@ class Chat:
                 self.logger.error('message: %s\ntrace: %s', str(ex), traceback.format_exc())
 
     def answer_stream(self, question):
-        self.messages.append((Chat.UserType.USER, question))
-
         # check that request doesn't violates rules
-        if self.openai.run_moderation(prompt=question):
+        if self.openai.run_moderation(content=question):
             yield "Sorry, we can\'t fulfill your request because it violates the rules of the service 😢"
             return
 
@@ -44,7 +36,7 @@ class Chat:
         tokens = []
 
         # process response stream
-        for token in self.openai.chat_completion_stream(prompt=question):
+        for token in self.openai.chat_completion_stream(self.chat_id, content=question):
             tokens.append(token)
 
             now = time()
@@ -52,7 +44,4 @@ class Chat:
                 last_message_time = now
                 yield to_markdown2_string(''.join(tokens))
 
-        raw_response = ''.join(tokens)
-        yield to_markdown2_string(raw_response)
-
-        self.messages.append((Chat.UserType.CHAT_GPT, raw_response))
+        yield to_markdown2_string(''.join(tokens))
